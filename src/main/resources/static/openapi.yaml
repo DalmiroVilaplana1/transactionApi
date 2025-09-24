@@ -1,0 +1,451 @@
+openapi: 3.0.3
+info:
+  title: API de Transacciones
+  version: 1.0.0
+  description: |
+    API para gestionar transacciones de transferencia bancaria con soporte de streaming (SSE) para actualizaciones en tiempo real.
+
+servers:
+  - url: http://localhost:8080
+    description: Local
+  - url: http://localhost:8081
+    description: Local (profile/puerto alternativo)
+
+tags:
+  - name: Transactions
+    description: Endpoints de transacciones
+  - name: Streams
+    description: Streaming de eventos (SSE)
+
+paths:
+  /transactions/transfers:
+    post:
+      tags: [Transactions]
+      operationId: createBankTransfer
+      summary: Iniciar una transacción de transferencia
+      description: Crea una transacción **PENDING** de tipo **BANK_TRANSFER** y devuelve el recurso creado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransferRequest'
+            examples:
+              ejemplo:
+                value:
+                  userId: "u-113411"
+                  amount: "250.00"
+                  currency: "EUR"
+                  bankCode: "BANK123"
+                  recipientAccount: "DE89370400440532013000"
+                  idempotencyKey: "key-123"
+      responses:
+        '201':
+          description: Creado
+          headers:
+            Location:
+              description: URL del recurso recién creado
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+              examples:
+                creado:
+                  value:
+                    transactionId: "aa033d81-c6e7-44bd-a8d5-695403920259"
+                    userId: "u-113411"
+                    amount: "250.00"
+                    currency: "EUR"
+                    status: "PENDING"
+                    method: "BANK_TRANSFER"
+                    createdAt: "2025-09-23T01:25:42.493733Z"
+                    bankCode: "BANK123"
+                    recipientAccount: "DE89370400440532013000"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /transactions/{id}:
+    get:
+      tags: [Transactions]
+      operationId: getTransactionById
+      summary: Consultar el estado de una transacción
+      parameters:
+        - $ref: '#/components/parameters/TransactionIdPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+              examples:
+                approved:
+                  value:
+                    transactionId: "aa033d81-c6e7-44bd-a8d5-695403920259"
+                    userId: "u-113411"
+                    amount: "250.00"
+                    currency: "EUR"
+                    status: "APPROVED"
+                    method: "BANK_TRANSFER"
+                    createdAt: "2025-09-23T01:25:42.493733Z"
+                    approvedAt: "2025-09-23T01:25:54.600403Z"
+                    bankCode: "BANK123"
+                    recipientAccount: "DE89370400440532013000"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/{userId}/transactions/approved:
+    get:
+      tags: [Transactions]
+      operationId: listApprovedTransactionsByUser
+      summary: Listar transacciones aprobadas de un usuario
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Direction'
+        - $ref: '#/components/parameters/CurrencyFilter'
+      responses:
+        '200':
+          description: OK (paginado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageTransactionResponse'
+              examples:
+                ejemplo:
+                  value:
+                    content:
+                      - transactionId: "02b161d9-9bfe-485b-951e-a129f667e91b"
+                        userId: "u-113411"
+                        amount: "100.00"
+                        currency: "EUR"
+                        status: "APPROVED"
+                        method: "BANK_TRANSFER"
+                        createdAt: "2025-09-23T01:26:14.922770Z"
+                        approvedAt: "2025-09-23T01:26:14.940769Z"
+                        bankCode: "B1"
+                        recipientAccount: "DE..."
+                    page: 0
+                    size: 10
+                    totalElements: 3
+                    totalPages: 1
+                    sort: "createdAt"
+                    direction: "desc"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/{userId}/transactions/stream:
+    get:
+      tags: [Streams]
+      operationId: streamUserTransactions
+      summary: Stream en tiempo real del historial de transacciones de un usuario (SSE)
+      description: |
+        Devuelve un flujo **text/event-stream** (SSE) con eventos de todas las transacciones del usuario.
+        Al conectar, el servidor envía **uno o más `SNAPSHOT`** (estado actual de cada transacción existente).
+        Luego, a medida que ocurren cambios, envía eventos `CREATED` y `STATUS_CHANGED`.
+
+        **Nombre del evento**: `status`  
+        **Formato de `data`:** JSON `EventMessage`.
+
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: Stream SSE
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: "Flujo SSE. Cada evento contiene líneas `event: status` y `data: <json>`, terminadas por una línea en blanco."
+              examples:
+                snapshot_y_cambios:
+                  summary: Ejemplo de eventos SSE
+                  value: |
+                    event: status
+                    data: {"transactionId":"02b161d9-9bfe-485b-951e-a129f667e91b","type":"SNAPSHOT","statusFrom":null,"statusTo":"APPROVED","at":"2025-09-23T01:26:14.922770Z"}
+
+                    event: status
+                    data: {"transactionId":"a2b77766-1777-4459-9589-d979ceaa7a84","type":"CREATED","statusFrom":null,"statusTo":null,"at":"2025-09-23T01:27:22.481346Z"}
+
+                    event: status
+                    data: {"transactionId":"a2b77766-1777-4459-9589-d979ceaa7a84","type":"STATUS_CHANGED","statusFrom":"PENDING","statusTo":"REJECTED","at":"2025-09-23T01:27:22.487348Z"}
+
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    TransactionIdPath:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+      description: ID de la transacción
+    UserIdPath:
+      in: path
+      name: userId
+      required: true
+      schema:
+        type: string
+      description: ID del usuario
+    Page:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Número de página (0-index)
+    Size:
+      in: query
+      name: size
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+      description: Tamaño de página
+    Sort:
+      in: query
+      name: sort
+      required: false
+      schema:
+        type: string
+        enum: [createdAt, amount, currency, status]
+        default: createdAt
+      description: Campo de ordenamiento
+    Direction:
+      in: query
+      name: direction
+      required: false
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
+      description: Dirección de ordenamiento
+    CurrencyFilter:
+      in: query
+      name: currency
+      required: false
+      schema:
+        type: string
+        pattern: '^[A-Z]{3}$'
+      description: Filtrar por moneda (ISO-4217, p. ej. EUR)
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            validation:
+              value:
+                timestamp: "2025-09-23T01:23:45Z"
+                status: 400
+                code: "VALIDATION_ERROR"
+                message: "Errores de validación en la solicitud."
+                path: "/transactions/transfers"
+                details:
+                  - field: "amount"
+                    error: "debe cumplir el patrón ^\\d+(\\.\\d{1,2})?$"
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            notFound:
+              value:
+                timestamp: "2025-09-23T01:23:45Z"
+                status: 404
+                code: "NOT_FOUND"
+                message: "Transaction not found"
+                path: "/transactions/abc"
+                details: []
+    Conflict:
+      description: Conflicto de datos (p. ej., idempotencia)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            conflict:
+              value:
+                timestamp: "2025-09-23T01:23:45Z"
+                status: 409
+                code: "DATA_INTEGRITY_VIOLATION"
+                message: "Conflicto de datos (posible clave de idempotencia duplicada)."
+                path: "/transactions/transfers"
+                details: []
+    InternalError:
+      description: Error interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            error:
+              value:
+                timestamp: "2025-09-23T01:23:45Z"
+                status: 500
+                code: "INTERNAL_ERROR"
+                message: "Unexpected error"
+                path: "/"
+                details: []
+
+  schemas:
+    CreateTransferRequest:
+      type: object
+      required: [userId, amount, currency, bankCode, recipientAccount]
+      properties:
+        userId:
+          type: string
+          example: "u-113411"
+        amount:
+          type: string
+          description: Monto decimal con punto. Hasta 2 decimales.
+          pattern: '^\\d+(\\.\\d{1,2})?$'
+          example: "250.00"
+        currency:
+          type: string
+          description: Moneda ISO-4217 (3 letras)
+          pattern: '^[A-Z]{3}$'
+          example: "EUR"
+        bankCode:
+          type: string
+          minLength: 1
+          example: "BANK123"
+        recipientAccount:
+          type: string
+          description: IBAN / cuenta destino
+          minLength: 5
+          example: "DE89370400440532013000"
+        idempotencyKey:
+          type: string
+          description: Clave idempotente (opcional)
+          example: "key-123"
+
+    TransactionResponse:
+      type: object
+      required: [transactionId, userId, amount, currency, status, method, createdAt]
+      properties:
+        transactionId: { type: string, example: "aa033d81-c6e7-44bd-a8d5-695403920259" }
+        userId:        { type: string, example: "u-113411" }
+        amount:        { type: string, example: "250.00" }
+        currency:      { type: string, example: "EUR" }
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+          example: "PENDING"
+        method:
+          type: string
+          enum: [BANK_TRANSFER]
+          example: "BANK_TRANSFER"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-09-23T01:25:42.493733Z"
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-09-23T01:25:54.600403Z"
+        rejectedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        bankCode:
+          type: string
+          example: "BANK123"
+        recipientAccount:
+          type: string
+          example: "DE89370400440532013000"
+
+    PageTransactionResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionResponse'
+        page:
+          type: integer
+          example: 0
+        size:
+          type: integer
+          example: 20
+        totalElements:
+          type: integer
+          example: 3
+        totalPages:
+          type: integer
+          example: 1
+        sort:
+          type: string
+          example: "createdAt"
+        direction:
+          type: string
+          enum: [asc, desc]
+          example: "desc"
+
+    ApiError:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-09-23T01:23:45Z"
+        status:
+          type: integer
+          example: 400
+        code:
+          type: string
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          example: "Errores de validación en la solicitud."
+        path:
+          type: string
+          example: "/transactions/transfers"
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldErrorDetail'
+          example:
+            - field: "amount"
+              error: "debe cumplir el patrón ^\\d+(\\.\\d{1,2})?$"
+    FieldErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+          example: "amount"
+        error:
+          type: string
+          example: "must not be blank"
