@@ -18,6 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +42,7 @@ public class TransactionController {
             UriComponentsBuilder ucb
     ) {
         TransactionResponse resp = service.createBankTransfer(req);
-        java.net.URI location = ucb.path("/transactions/{id}").build(resp.transactionId());
+        URI location = ucb.path("/transactions/{id}").build(resp.transactionId());
         return ResponseEntity.created(location).body(resp);
     }
 
