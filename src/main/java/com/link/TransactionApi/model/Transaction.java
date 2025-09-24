@@ -36,8 +36,6 @@ public class Transaction {
     private Instant approvedAt;
     private Instant rejectedAt;
 
-    @Column(unique = true)
-    private String idempotencyKey;
 
     @Lob
     private String metadata;
@@ -118,13 +116,6 @@ public class Transaction {
         this.rejectedAt = rejectedAt;
     }
 
-    public String getIdempotencyKey() {
-        return idempotencyKey;
-    }
-
-    public void setIdempotencyKey(String idempotencyKey) {
-        this.idempotencyKey = idempotencyKey;
-    }
 
     public String getMetadata() {
         return metadata;
