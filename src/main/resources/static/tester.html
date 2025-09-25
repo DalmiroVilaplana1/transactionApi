@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Transacciones · Tiempo real</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 24px; }
+    h1 { margin: 0 0 16px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 8px; min-width: 260px; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; }
+    button.primary { background: #0b5; color: #fff; border: none; }
+    button.danger { background: #d33; color: #fff; border: none; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .statusbar { font-size: 12px; color: #666; margin-top: 8px; }
+    .msg { margin: 16px 0; padding: 12px; border: 1px dashed #ccc; border-radius: 8px; color: #555; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; font-size: 14px; }
+    th { background: #f7f7f7; position: sticky; top: 0; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
+    .PENDING { background:#fff7e6; border-color:#f6b400; }
+    .APPROVED { background:#eaffea; border-color:#0b5; }
+    .REJECTED { background:#ffeaea; border-color:#d33; }
+    .muted { color:#777; }
+  </style>
+</head>
+<body>
+<h1>Transacciones · Tiempo real</h1>
+
+<div class="row">
+  <input id="userId" type="text" placeholder="Ingresá el User ID (p.ej. u-113411)" />
+  <button id="btnConnect" class="primary">Conectar</button>
+  <button id="btnDisconnect" class="danger" disabled>Desconectar</button>
+</div>
+<div class="statusbar" id="statusBar">Desconectado</div>
+
+<div class="msg" id="messageBox">Ingrese usuario ID para conectar.</div>
+
+<div style="margin-top:12px; overflow:auto; max-height: 65vh;">
+  <table>
+    <thead>
+    <tr>
+      <th>evento-id</th>
+      <th>transaccion-id</th>
+      <th>monto</th>
+      <th>estado</th>
+      <th>tipoEvento</th>
+      <th>fecha-hora</th>
+    </tr>
+    </thead>
+    <tbody id="tbody">
+    <!-- filas dinámicas (una por evento) -->
+    </tbody>
+  </table>
+</div>
+
+<script>
+  (function () {
+    /** @type {EventSource|null} */
+    let es = null;
+
+    let eventSeq = 0;
+
+    /** @type {Array<{seq:number, txId:string, estado:string, tipo:string, at:string|null}>} */
+    const eventos = [];
+
+    const $ = (id) => document.getElementById(id);
+    const userIdInput = $("userId");
+    const btnConnect = $("btnConnect");
+    const btnDisconnect = $("btnDisconnect");
+    const messageBox = $("messageBox");
+    const statusBar = $("statusBar");
+    const tbody = $("tbody");
+
+    function setStatus(texto) { statusBar.textContent = texto; }
+    function setMessage(texto) {
+      messageBox.textContent = texto;
+      messageBox.style.display = texto ? "block" : "none";
+    }
+
+    function mapTipo(type) {
+      switch (type) {
+        case "CREATED": return "Create";
+        case "STATUS_CHANGED": return "Status-change";
+        case "SNAPSHOT": return "Snapshot";
+        default: return type || "";
+      }
+    }
+
+    function formatAt(atStr) {
+      if (!atStr) return "";
+      const d = new Date(atStr);
+      if (isNaN(d)) return atStr;
+      return d.toLocaleString("es-AR");
+    }
+
+    function esc(v) {
+      return String(v).replace(/[&<>"']/g, (c) => (
+        {"&":"&amp;","<":"&lt;","<": "&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]
+      ));
+    }
+
+    function render() {
+      const conectado = !!es;
+
+      if (!conectado) {
+        setMessage("Ingrese usuario ID para conectar.");
+      } else if (eventos.length === 0) {
+        const uid = (userIdInput.value || "").trim();
+        setMessage(`El usuario ${uid} aún no realizó transferencias.`);
+      } else {
+        setMessage("");
+      }
+
+      const rows = eventos
+        .slice()
+        .sort((a, b) => (b.seq - a.seq) || ((Date.parse(b.at || "") || 0) - (Date.parse(a.at || "") || 0)))
+        .map(ev => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${ev.seq}</td>
+            <td>${esc(ev.txId)}</td>
+            <td>${ev.amount}</td>
+            <td><span class="pill ${esc(ev.estado)}">${esc(ev.estado)}</span></td>
+            <td>${esc(ev.tipo)}</td>
+            <td>${esc(formatAt(ev.at))}</td>
+          `;
+          return tr;
+        });
+
+      tbody.replaceChildren(...rows);
+    }
+
+    function pushEvent(txId, estado, tipo, at, amount) {
+      eventos.push({
+        seq: ++eventSeq,
+        txId: txId,
+        estado: estado || "PENDING",
+        tipo: tipo || "",
+        at: at || null,
+        amount: amount || 0
+      });
+      render();
+    }
+
+    function handleIncoming(raw) {
+      let data;
+      try { data = JSON.parse(raw); } catch { return; }
+      if (!data || !data.transactionId || !data.type) return;
+
+
+      const estado = (data.statusTo || (data.type === "CREATED" ? "PENDING" : "")) || "";
+      const tipo = mapTipo(data.type);
+      const at = data.at || null;
+      const amount = data.amount || null;
+      pushEvent(data.transactionId, estado, tipo, at, amount);
+    }
+
+    function connect() {
+      if (es) return;
+      const userId = (userIdInput.value || "").trim();
+      if (!userId) { setMessage("Ingrese usuario ID para conectar."); return; }
+
+      eventos.length = 0;
+      eventSeq = 0;
+      render();
+
+      const url = `/users/${encodeURIComponent(userId)}/transactions/stream`;
+      setStatus(`Conectando a ${url}…`);
+      es = new EventSource(url);
+
+      // Backend envía evento "status"
+      es.addEventListener("status", (ev) => handleIncoming(ev.data));
+
+      es.onmessage = (ev) => handleIncoming(ev.data);
+
+      es.onopen = () => {
+        setStatus("Conectado");
+        btnConnect.disabled = true;
+        btnDisconnect.disabled = false;
+        render();
+      };
+
+      es.onerror = () => {
+        setStatus("Error de conexión (reintentando…)");
+      };
+    }
+
+    function disconnect() {
+      if (es) { es.close(); es = null; }
+      btnConnect.disabled = false;
+      btnDisconnect.disabled = true;
+      setStatus("Desconectado");
+      render();
+    }
+
+    btnConnect.addEventListener("click", connect);
+    btnDisconnect.addEventListener("click", disconnect);
+    userIdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+
+    // Estado inicial
+    render();
+  })();
+</script>
+</body>
+</html>

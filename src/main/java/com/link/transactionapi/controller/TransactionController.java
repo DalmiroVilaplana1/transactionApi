@@ -73,13 +73,14 @@ public class TransactionController {
         httpResp.setHeader("Cache-Control", "no-cache");
         httpResp.setHeader("X-Accel-Buffering", "no");
 
-        SseEmitter emitter = hub.subscribeUser(userId, 120_000L);
+        SseEmitter emitter = hub.subscribeUser(userId, -1L);
 
         // Se envia un evento por cada transacción actual del usuario
         List<Transaction> list = txRepo.findByUserId(userId);
         for (Transaction tx : list) {
             Map<String, Object> snapshot = new LinkedHashMap<>();
             snapshot.put("transactionId", tx.getId());
+            snapshot.put("amount", tx.getAmount().toString());
             snapshot.put("type", "SNAPSHOT");
             snapshot.put("statusFrom", null);
             snapshot.put("statusTo", tx.getStatus() == null ? null : tx.getStatus().name());

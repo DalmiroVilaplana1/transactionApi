@@ -36,6 +36,8 @@ public class SseDomainEventPublisher implements DomainEventPublisher {
         hub.publish(event.getTransactionId(), payload);
 
         Optional<Transaction> txOpt = txRepo.findById(event.getTransactionId());
+
+        txOpt.ifPresent(tx -> payload.put("amount", tx.getAmount()));
         txOpt.ifPresent(tx -> hub.publishToUser(tx.getUserId(), payload));
     }
 }
