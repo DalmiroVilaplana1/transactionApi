@@ -38,7 +38,6 @@ paths:
                   currency: "EUR"
                   bankCode: "BANK123"
                   recipientAccount: "DE89370400440532013000"
-                  idempotencyKey: "key-123"
       responses:
         '201':
           description: Creado
@@ -288,7 +287,7 @@ components:
                 path: "/transactions/abc"
                 details: []
     Conflict:
-      description: Conflicto de datos (p. ej., idempotencia)
+      description: Conflicto de datos
       content:
         application/json:
           schema:
@@ -299,7 +298,7 @@ components:
                 timestamp: "2025-09-23T01:23:45Z"
                 status: 409
                 code: "DATA_INTEGRITY_VIOLATION"
-                message: "Conflicto de datos (posible clave de idempotencia duplicada)."
+                message: "Conflicto de datos "
                 path: "/transactions/transfers"
                 details: []
     InternalError:
@@ -345,10 +344,7 @@ components:
           description: IBAN / cuenta destino
           minLength: 5
           example: "DE89370400440532013000"
-        idempotencyKey:
-          type: string
-          description: Clave idempotente (opcional)
-          example: "key-123"
+
 
     TransactionResponse:
       type: object
