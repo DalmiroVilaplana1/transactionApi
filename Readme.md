@@ -1,4 +1,3 @@
-
 # Solución para el Manejo de Transacciones Financieras de Pago
 
 Proyecto de ejemplo desarrollado en Java 21 + Spring Boot, cuyo objetivo es simular un sistema de pagos en tiempo real con soporte para transferencias bancarias y múltiples monedas.
@@ -46,11 +45,11 @@ docker compose down
 ```
 
 
-## Documentation
+## Documentation de la API
 
 Se realizo una documentacion de la API con OpenApi + Swagger UI. Ahi se pueden ver claros ejemplos de lo que recibe y devuelva cada endpoint. 
 
-[Documentation API](http://localhost:8080/swagger-ui/index.html#/)
+[Link al Swagger](http://localhost:8080/swagger-ui/index.html#/)
 
 Esta documentacion se puede acceder solo si la API ya se encuentra levantada. 
 
@@ -98,3 +97,16 @@ A continuación, se listan las interfaces implementadas con su propósito, imple
 - Implementación actual: `SseDomainEventPublisher`.
 
 ---
+
+## Interfaz grafica
+
+Para la simplicidad del proyecto, inclui un archivo estatico dentro del proyecto. 
+
+Es una pagina sencilla que contiene un textfield donde se debe ingresar el userId al que se le quieren consultar las transacciones. Una vez ingresado el userId se debe tocar en el boton "Conectar". Eso conectara el frontend con el endpoint:
+/users/{userId}/transactions/stream 
+
+Si el usuario ya tiene registradas transferencias previas a la conexion, al conectar nos mostrara esas transferencias solo con su estado final -> (APPROVED - REJECTED) pero mientras se mantenga activa la conexion, si se hacen transferencias para ese usuario, se podra ver en tiempo real como "cambia de estado". Pasando asi del estado "PENDING" (cuando recien se creo) al estado APPROVED/REJECTED dependiendo de lo que determino la clase "RandomStatusResolver"
+
+
+
+[Link a la interfaz](http://localhost:8080/tester.html)
